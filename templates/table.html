@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 style="text-align: center; font-family: Arial, sans-serif; color: #333;">Table View</h1>
+<div style="margin-bottom: 20px; text-align: center;">
+    <a href="/save" style="font-size: 16px; font-weight: bold; text-decoration: none; color: white; background-color: #4CAF50; padding: 8px 16px; border-radius: 4px;">Save File (Excel)</a>
+</div>
+<div class="table-container">
+    {{ table_html|safe }}
+</div>
+{% endblock %}

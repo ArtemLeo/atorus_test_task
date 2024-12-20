@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container">
+    <h1>THE APPLICATION SUPPORTS THE FOLLOWING FILE FORMATS:</h1>
+    <ul>
+        <li><strong>CSV</strong> - text files with delimiters</li>
+        <li><strong>Excel</strong> - tables in XLSX format</li>
+        <li><strong>SAS7BDAT</strong> - standard SAS files</li>
+        <li><strong>XPT</strong> - standard SAS transport files</li>
+    </ul>
+
+    <h2>Upload a File:</h2>
+    <form class="form-container" action="/view" method="post" enctype="multipart/form-data">
+        <label for="file_type">Select File Type:</label>
+        <select name="file_type" id="file_type" required>
+            <option value="csv">CSV</option>
+            <option value="excel">Excel</option>
+            <option value="sas7bdat">SAS7BDAT</option>
+            <option value="xpt">XPT</option>
+        </select>
+        <input type="file" name="file" required>
+        <button type="submit">View Table</button>
+    </form>
+
+    <div class="note-container">
+        <h3>Please note:</h3>
+        <p>◾️ Unfortunately, <strong>CPORT</strong> files created using <em>PROC CPORT</em> in SAS are not supported.
+           This is because the format is proprietary and not supported by most open-source Python libraries.</p>
+        <p>If you have a file in CPORT format, you can:</p>
+        <ul>
+            <li>Use SAS or WPS to convert it to <strong>SAS7BDAT</strong> or <strong>XPT</strong> format.</li>
+            <li>Use a commercial tool such as <a href="https://stattransfer.com" target="_blank">Stat/Transfer</a>.</li>
+        </ul>
+        <p>◾️ We recommend converting files to a supported format before uploading them.
+           If you have any questions, please contact our technical support team.</p>
+    </div>
+</div>
+{% endblock %}
