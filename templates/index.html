@@ -11,13 +11,7 @@
 
     <h2>Upload a File:</h2>
     <form class="form-container" action="/view" method="post" enctype="multipart/form-data">
-        <label for="file_type">Select File Type:</label>
-        <select name="file_type" id="file_type" required>
-            <option value="csv">CSV</option>
-            <option value="excel">Excel</option>
-            <option value="sas7bdat">SAS7BDAT</option>
-            <option value="xpt">XPT</option>
-        </select>
+        <!-- Прибрано label та select -->
         <input type="file" name="file" required>
         <button type="submit">View Table</button>
     </form>

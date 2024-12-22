@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_file
+from flask import Flask, render_template, request, send_file, session
 import pandas as pd
 import pyreadstat
 import chardet
@@ -6,14 +6,17 @@ import os
 import subprocess
 
 app = Flask(__name__)
-TEMP_FOLDER = 'temp/'  # Temporary folder for saving files
-os.makedirs(TEMP_FOLDER, exist_ok=True)
+app.config['SECRET_KEY'] = 'your-secret-key'
 
-# Global variables to store data and file type
-global_data = None
-file_type_global = None
+# Папка для зберігання сконвертованих (готових до вивантаження) файлів
+CONVERTED_FOLDER = 'converted_files/'
+os.makedirs(CONVERTED_FOLDER, exist_ok=True)
 
-# Function to convert CPORT to XPT
+
+# ------------------------------------------------------------------------------
+# ФУНКЦІЇ ДЛЯ ОБРОБКИ РІЗНИХ ФОРМАТІВ
+# ------------------------------------------------------------------------------
+
 def convert_cport_to_xpt(input_path, output_path):
     """
     Викликає зовнішній інструмент для конвертації CPORT у XPT.
@@ -26,7 +29,7 @@ def convert_cport_to_xpt(input_path, output_path):
     except subprocess.CalledProcessError as e:
         raise ValueError(f"Помилка під час конвертації CPORT: {e}")
 
-# Separate functions for each file format
+
 def read_csv(file):
     raw_data = file.read()
     result = chardet.detect(raw_data)
@@ -34,106 +37,148 @@ def read_csv(file):
     file.seek(0)
     return pd.read_csv(file, encoding=encoding, delimiter='$')
 
+
 def read_excel(file):
     return pd.read_excel(file)
 
+
 def read_sas7bdat(file):
-    temp_file_path = os.path.join(TEMP_FOLDER, file.filename)
-    file.save(temp_file_path)  # Save the uploaded file temporarily
+    """
+    Pyreadstat вимагає, щоб файл був на диску.
+    Тому тимчасово зберігаємо його у CONVERTED_FOLDER, а потім видаляємо.
+    """
+    temp_file_path = os.path.join(CONVERTED_FOLDER, file.filename)
+    file.save(temp_file_path)
     data, _ = pyreadstat.read_sas7bdat(temp_file_path)
-    os.remove(temp_file_path)  # Delete the temporary file after reading
+    os.remove(temp_file_path)
     return data
 
-def read_xpt(file):
-    temp_file_path = os.path.join(TEMP_FOLDER, file.filename)
-    file.save(temp_file_path)  # Save the uploaded file temporarily
 
+def read_xpt(file):
+    """
+    Може бути стандартний XPT або CPORT.
+    Якщо це CPORT (у тексті помилки “CPORT”), тоді конвертуємо у XPT.
+    """
+    temp_file_path = os.path.join(CONVERTED_FOLDER, file.filename)
+    file.save(temp_file_path)
     try:
-        # Try to read as standard XPT
         data, _ = pyreadstat.read_xport(temp_file_path)
     except Exception as e:
-        if "CPORT" in str(e):  # If it's a CPORT file
+        # Якщо це CPORT, у повідомленні часто є слово "CPORT"
+        if "CPORT" in str(e):
             converted_file_path = temp_file_path + ".xpt"
-            convert_cport_to_xpt(temp_file_path, converted_file_path)  # Convert to XPT
+            convert_cport_to_xpt(temp_file_path, converted_file_path)
             try:
                 data, _ = pyreadstat.read_xport(converted_file_path)
             except Exception as e:
                 os.remove(temp_file_path)
                 os.remove(converted_file_path)
                 raise ValueError(f"Не вдалося прочитати сконвертований файл: {e}")
-            os.remove(converted_file_path)  # Remove converted file
+            os.remove(converted_file_path)
         else:
             os.remove(temp_file_path)
             raise ValueError(f"Помилка читання XPT: {e}")
-
-    os.remove(temp_file_path)  # Remove original file after processing
+    os.remove(temp_file_path)
     return data
 
-# Function to clean the data
+
 def clean_table(data):
-    data = data.dropna(axis=1, how='all')  # Drop columns where all values are NaN
-    data = data.fillna('N/A')  # Fill NaN values with 'N/A'
-    data.columns = [col.strip().replace(' ', '_').lower() for col in data.columns]  # Rename columns to snake_case
-    for col in data.select_dtypes(include=['object']).columns:  # Remove unwanted characters
+    data = data.dropna(axis=1, how='all')  # видаляємо порожні колонки
+    data = data.fillna('N/A')  # заповнюємо відсутні значення
+    # Робимо заголовки в snake_case
+    data.columns = [col.strip().replace(' ', '_').lower() for col in data.columns]
+
+    for col in data.select_dtypes(include=['object']).columns:
         data[col] = data[col].str.replace(r'[\n\r]+', ' ', regex=True).str.strip()
-        data[col] = data[col].str.replace(r'\s+', ' ', regex=True)  # Normalize spaces
+        data[col] = data[col].str.replace(r'\s+', ' ', regex=True)
     return data
+
+
+# ------------------------------------------------------------------------------
+# МАПІНГ РОЗШИРЕНЬ НА ФУНКЦІЇ
+# ------------------------------------------------------------------------------
+
+EXTENSION_TO_READER = {
+    '.csv': read_csv,
+    '.xpt': read_xpt,  # XPT або CPORT, з обробкою всередині read_xpt
+    '.sas7bdat': read_sas7bdat,
+    '.xlsx': read_excel,  # Excel (XLSX)
+    '.xls': read_excel  # Excel (XLS)
+}
+
+
+# ------------------------------------------------------------------------------
+# МАРШРУТИ
+# ------------------------------------------------------------------------------
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
+
 @app.route('/view', methods=['POST'])
 def view_table():
-    global global_data, file_type_global
     try:
         file = request.files['file']
-        file_type = request.form['file_type']
         if not file:
             return "No file uploaded!", 400
 
-        if file_type == 'xpt':
-            try:
-                data = read_xpt(file)
-            except ValueError as e:
-                if "CPORT" in str(e):
-                    return (
-                        "Файл є форматом CPORT, який не підтримується. "
-                        "Будь ласка, конвертуйте його у XPT або SAS7BDAT перед завантаженням.",
-                        400
-                    )
-                else:
-                    return f"Помилка обробки XPT файлу: {e}", 400
-        elif file_type == 'csv':
-            data = read_csv(file)
-        elif file_type == 'excel':
-            data = read_excel(file)
-        elif file_type == 'sas7bdat':
-            data = read_sas7bdat(file)
-        else:
+        original_filename = file.filename  # Оригінальна назва файлу
+        ext = os.path.splitext(original_filename)[1].lower()  # Розширення, напр. ".csv"
+
+        # 1. Автоматично обираємо функцію зчитування за розширенням
+        reader_func = EXTENSION_TO_READER.get(ext)
+        if not reader_func:
             return "Unsupported file type selected!", 400
 
-        data = clean_table(data)  # Clean the data
+        # 2. Зчитуємо дані (CSV, Excel, SAS7BDAT, XPT/CPORT)
+        data = reader_func(file)
+
+        # 3. Очищаємо дані
+        data = clean_table(data)
+
+        # 4. Створюємо назву Excel-файлу з тим самим "коренем"
+        base_name, _ = os.path.splitext(original_filename)
+        excel_filename = base_name + ".xlsx"
+        excel_path = os.path.join(CONVERTED_FOLDER, excel_filename)
+
+        # 5. Зберігаємо у форматі Excel
+        data.to_excel(excel_path, index=False, engine='openpyxl')
+
+        # 6. Формуємо HTML-таблицю для відображення
         html_table = data.to_html(classes='data', index=False, escape=False)
-        global_data = data  # Store cleaned data globally
-        file_type_global = file_type
+
+        # 7. Зберігаємо назву Excel-файлу в session для подальшого завантаження в /save
+        session['excel_filename'] = excel_filename
+
+        # Повертаємо рендер сторінки з таблицею
         return render_template('table.html', table_html=html_table)
+
+    except ValueError as e:
+        # Обробка ситуації з CPORT або інших ValueError
+        return str(e), 400
     except Exception as e:
         return f"Error processing file: {str(e)}", 500
 
 
 @app.route('/save')
 def save_file():
-    global global_data
-    if global_data is None:
+    # Отримуємо назву Excel-файлу з session
+    excel_filename = session.get('excel_filename')
+    if not excel_filename:
         return "No data to save!", 400
 
-    save_path = os.path.join(TEMP_FOLDER, 'saved_file.xlsx')  # Always save as Excel
-    try:
-        global_data.to_excel(save_path, index=False, engine='openpyxl')  # Save as Excel
-        return send_file(save_path, as_attachment=True)
-    except Exception as e:
-        return f"Error saving file: {str(e)}", 500
+    excel_path = os.path.join(CONVERTED_FOLDER, excel_filename)
+    if not os.path.exists(excel_path):
+        return f"File {excel_filename} not found on server!", 404
+
+    # Повертаємо файл користувачеві
+    return send_file(
+        excel_path,
+        as_attachment=True,
+        download_name=excel_filename
+    )
+
 
 if __name__ == '__main__':
     app.run(debug=True)
