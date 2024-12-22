@@ -26,7 +26,7 @@ TabularViewer/
 │   ├── table.html     # Table display interface
 ├── static/            # Static files (CSS, JavaScript)
 │   ├── styles.css     # Custom styles
-├── temp/              # Temporary folder for saving uploaded files
+├── converted_files/   # Folder for saving uploaded files
 ├── README.md          # Project documentation
 ├── requirements.txt   # Python dependencies
 ```
