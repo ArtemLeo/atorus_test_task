@@ -18,7 +18,7 @@ The application supports the following file formats:
 
 ## Project Structure:
 ```
-TabularViewer/
+atorus_test_task/
 ├── app.py             # Main Flask application
 ├── templates/         # HTML templates for the web interface
 │   ├── base.html      # Base template for consistent layout

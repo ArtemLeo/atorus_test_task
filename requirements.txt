@@ -4,3 +4,5 @@ openpyxl
 pyreadstat
 chardet
 openpyxl
+pytest
+coverage
